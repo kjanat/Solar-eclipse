@@ -367,15 +367,13 @@ def render_montage(
     raw_dir: Path,
     crops_dir: Path,
     renders_dir: Path,
-    metrics: dict[str, DataRow],
+    names: list[str],
 ) -> Path:
-    names = sorted(metrics)
     if len(names) < 2:
-        raise RuntimeError("At least two metric rows required for the montage")
+        raise RuntimeError("At least two source frames required for the montage")
     width, height = 2800, 1050
     canvas = Image.new("RGB", (width, height), (2, 2, 4))
     draw = ImageDraw.Draw(canvas)
-    title_font = dejavu_font(24)
     label_font = dejavu_font(16)
     for index, name in enumerate(names):
         image = open_rgb(crops_dir / f"{Path(name).stem}.jpg")
@@ -402,18 +400,6 @@ def render_montage(
             fill=(160, 160, 170),
             font=label_font,
         )
-    draw.text(
-        (70, 60),
-        "Eclipse progression - RAW sequence",
-        fill=(235, 235, 240),
-        font=title_font,
-    )
-    draw.text(
-        (70, 94),
-        "Centered montage; positions are compositional, not the physical solar trajectory.",
-        fill=(145, 145, 155),
-        font=label_font,
-    )
     output = renders_dir / "raw_eclipse_progression_montage.png"
     metadata = ImageMetadata(
         "Centered montage of the solar eclipse RAW sequence",
@@ -619,9 +605,10 @@ def render_all(
     analysis_renders.append(render_stack(raw_dir, renders_dir, metrics, decoder))
     analysis_renders.extend(render_details(raw_dir, renders_dir, metrics, decoder))
     crop_contact = render_crop_contact(raw_dir, crops_dir, renders_dir, metrics)
-    montage = render_montage(raw_dir, crops_dir, renders_dir, metrics)
+    names = sorted(metrics)
+    montage = render_montage(raw_dir, crops_dir, renders_dir, names)
     render_contact_path = render_contact(
-        raw_dir, renders_dir, analysis_renders, montage, sorted(metrics)
+        raw_dir, renders_dir, analysis_renders, montage, names
     )
     created = [*analysis_renders, crop_contact, montage, render_contact_path]
     created.extend(render_progression(raw_dir, final_dir, metrics, decoder))

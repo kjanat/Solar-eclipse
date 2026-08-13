@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 from PIL import ExifTags, Image
-from PIL.TiffImagePlugin import IFDRational
 
 from solar_eclipse_analysis.metadata import (
     COMMON_SOURCE_TAGS,
@@ -24,10 +23,14 @@ def require_raw(name: str) -> Path:
     return path
 
 
-def rational_value(value: object) -> float:
-    if not isinstance(value, int | float | IFDRational):
-        raise TypeError(f"Expected numeric EXIF value, got {type(value).__name__}")
-    return float(value)
+def metadata_values(path: Path, *tags: str) -> list[str]:
+    result = subprocess.run(
+        ["exiftool", "-n", "-T", *(f"-{tag}" for tag in tags), str(path)],
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return result.stdout.rstrip().split("\t")
 
 
 @pytest.mark.parametrize("suffix", ["png", "jpg"])
@@ -52,8 +55,6 @@ def test_single_source_preserves_safe_standard_metadata(
         assert exif[ExifTags.Base.Copyright] == "Kaj Kowalski, All Rights Reserved"
         assert photographic[ExifTags.Base.DateTimeOriginal] == "2026:08:12 20:04:41"
         assert photographic[ExifTags.Base.OffsetTimeOriginal] == "+02:00"
-        assert rational_value(photographic[ExifTags.Base.ExposureTime]) == 0.4
-        assert rational_value(photographic[ExifTags.Base.FNumber]) == 40.0
         assert photographic[ExifTags.Base.ISOSpeedRatings] == 160
         assert photographic[ExifTags.Base.LensModel] == "RF-S18-150mm F3.5-6.3 IS STM"
         assert photographic[ExifTags.Base.ExifImageWidth] == 20
@@ -63,6 +64,8 @@ def test_single_source_preserves_safe_standard_metadata(
         assert ExifTags.Base.GPSInfo not in exif
         assert 0xA431 not in photographic
         assert ExifTags.Base.LensSerialNumber not in photographic
+
+    assert metadata_values(output, "ExposureTime", "FNumber") == ["0.4", "40"]
 
     xmp = subprocess.run(
         [
@@ -111,8 +114,8 @@ def test_composite_preserves_only_shared_settings(tmp_path: Path) -> None:
         assert ExifTags.Base.ExposureTime not in photographic
         assert ExifTags.Base.FNumber not in photographic
         assert photographic[ExifTags.Base.ISOSpeedRatings] == 160
-        assert rational_value(photographic[ExifTags.Base.FocalLength]) == 150.0
         assert photographic[ExifTags.Base.DateTimeOriginal] == "2026:08:12 20:04:41"
+    assert metadata_values(output, "FocalLength") == ["150"]
 
 
 def test_common_source_tags_keeps_fields_independently(
@@ -131,9 +134,11 @@ def test_common_source_tags_keeps_fields_independently(
         stdout=f"{'\t'.join(first)}\n{'\t'.join(second)}\n",
         stderr="",
     )
-    monkeypatch.setattr(
-        "solar_eclipse_analysis.metadata.run_exiftool", lambda _arguments: completed
-    )
+
+    def fake_exiftool(_arguments: list[str]) -> subprocess.CompletedProcess[str]:
+        return completed
+
+    monkeypatch.setattr("solar_eclipse_analysis.metadata.run_exiftool", fake_exiftool)
 
     tags = common_source_tags((Path("one.CR3"), Path("two.CR3")))
 
