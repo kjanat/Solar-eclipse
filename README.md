@@ -65,3 +65,5 @@ uv run solar-eclipse-analysis \
 The two RAW archives are complementary: `8487-8489` and `8490-8514`. The `extract` stage combines them under `source/raw/` without overwriting a conflicting file.
 
 Archived duplicates are retained intentionally. Canonical working copies live in `final/` and `analysis/`.
+
+![final](final/eclipse_progression_amsterdam_urth_final_1920.jpg)
