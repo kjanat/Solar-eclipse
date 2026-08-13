@@ -1,0 +1,8 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+dist/
+analysis/crops/
+analysis/data/metrics.jsonl
+source/raw/

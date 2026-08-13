@@ -1,0 +1,37 @@
+[project]
+name = "solar-eclipse-analysis"
+version = "0.1.0"
+description = "Portable RAW analysis pipeline for the 2026 Amsterdam solar eclipse"
+readme = "README.md"
+requires-python = ">=3.14"
+authors = [{ name = "Kaj Kowalski", email = "info@kajkowalski.nl" }]
+dependencies = [
+  "matplotlib>=3.11.1",
+  "numpy>=2.4.6",
+  "opencv-python-headless>=5.0.0.93",
+  "pillow>=12.3.0",
+]
+
+[project.scripts]
+solar-eclipse-analysis = "solar_eclipse_analysis.cli:main"
+
+[dependency-groups]
+dev = [
+  "basedpyright>=1.39.9",
+  "pytest>=9.1.1",
+  "ruff>=0.16.2",
+  "ty>=0.0.71",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pyright]
+pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
+preview = true
+target-version = "py314"
