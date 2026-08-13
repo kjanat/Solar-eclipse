@@ -297,6 +297,170 @@ def render_details(
     return created
 
 
+def open_rgb(path: Path) -> Image.Image:
+    if not path.is_file():
+        raise FileNotFoundError(f"Required image not found: {path}")
+    with Image.open(path) as image:
+        return image.convert("RGB")
+
+
+def render_crop_contact(
+    raw_dir: Path,
+    crops_dir: Path,
+    renders_dir: Path,
+    metrics: dict[str, DataRow],
+) -> Path:
+    names = sorted(metrics)
+    columns = 4
+    tile_width, image_height, label_height = 430, 430, 88
+    rows = math.ceil(len(names) / columns)
+    canvas = Image.new(
+        "RGB",
+        (columns * tile_width, rows * (image_height + label_height)),
+        (16, 16, 16),
+    )
+    title_font = dejavu_font(20)
+    detail_font = dejavu_font(15)
+    for index, name in enumerate(names):
+        row = metrics[name]
+        image = open_rgb(crops_dir / f"{Path(name).stem}.jpg")
+        image = image.resize((tile_width, image_height), Image.Resampling.LANCZOS)
+        x = index % columns * tile_width
+        y = index // columns * (image_height + label_height)
+        canvas.paste(image, (x, y))
+        draw = ImageDraw.Draw(canvas)
+        draw.text(
+            (x + 8, y + image_height + 7),
+            Path(name).stem.removeprefix("_"),
+            font=title_font,
+            fill=(238, 238, 240),
+        )
+        draw.text(
+            (x + 8, y + image_height + 35),
+            "  ".join((
+                format_shutter(float(row["shutter_s"])),
+                f"f/{float(row['aperture']):g}",
+                f"edge {float(row['edge_p995']):.3f}",
+            )),
+            font=detail_font,
+            fill=(185, 185, 190),
+        )
+        draw.text(
+            (x + 8, y + image_height + 58),
+            " | ".join((
+                f"clip RGB {float(row['clip_all_pct']):.3f}%",
+                f"any {float(row['clip_any_pct']):.3f}%",
+            )),
+            font=detail_font,
+            fill=(160, 160, 166),
+        )
+    output = renders_dir / "all_sun_crops_contact.jpg"
+    metadata = ImageMetadata(
+        "Contact sheet of all solar eclipse analysis crops",
+        tuple(require_raw(raw_dir, name) for name in names),
+    )
+    save_jpeg(canvas, output, metadata, quality=94)
+    return output
+
+
+def render_montage(
+    raw_dir: Path,
+    crops_dir: Path,
+    renders_dir: Path,
+    metrics: dict[str, DataRow],
+) -> Path:
+    names = sorted(metrics)
+    if len(names) < 2:
+        raise RuntimeError("At least two metric rows required for the montage")
+    width, height = 2800, 1050
+    canvas = Image.new("RGB", (width, height), (2, 2, 4))
+    draw = ImageDraw.Draw(canvas)
+    title_font = dejavu_font(24)
+    label_font = dejavu_font(16)
+    for index, name in enumerate(names):
+        image = open_rgb(crops_dir / f"{Path(name).stem}.jpg")
+        grayscale = np.asarray(image.convert("L"), dtype=np.uint8)
+        y_values, x_values = np.where(grayscale > 22)
+        if x_values.size:
+            image = image.crop((
+                max(int(x_values.min()) - 25, 0),
+                max(int(y_values.min()) - 25, 0),
+                min(int(x_values.max()) + 26, image.width),
+                min(int(y_values.max()) + 26, image.height),
+            ))
+        image.thumbnail((155, 155), Image.Resampling.LANCZOS)
+        progress = index / (len(names) - 1)
+        center_x = 90 + progress * (width - 180)
+        center_y = 500 - 250 * math.sin(progress * math.pi)
+        canvas.paste(
+            image,
+            (round(center_x - image.width / 2), round(center_y - image.height / 2)),
+        )
+        draw.text(
+            (round(center_x - 44), round(center_y + 95)),
+            Path(name).stem.replace("_J3A", ""),
+            fill=(160, 160, 170),
+            font=label_font,
+        )
+    draw.text(
+        (70, 60),
+        "Eclipse progression - RAW sequence",
+        fill=(235, 235, 240),
+        font=title_font,
+    )
+    draw.text(
+        (70, 94),
+        "Centered montage; positions are compositional, not the physical solar trajectory.",
+        fill=(145, 145, 155),
+        font=label_font,
+    )
+    output = renders_dir / "raw_eclipse_progression_montage.png"
+    metadata = ImageMetadata(
+        "Centered montage of the solar eclipse RAW sequence",
+        tuple(require_raw(raw_dir, name) for name in names),
+    )
+    save_png(canvas, output, metadata, compress_level=3)
+    return output
+
+
+def render_contact(
+    raw_dir: Path,
+    renders_dir: Path,
+    render_paths: list[Path],
+    montage_path: Path,
+    names: list[str],
+) -> Path:
+    paths = [*render_paths, montage_path]
+    columns = 2
+    tile_width, image_height, label_height = 600, 410, 60
+    rows = math.ceil(len(paths) / columns)
+    canvas = Image.new(
+        "RGB",
+        (columns * tile_width, rows * (image_height + label_height)),
+        (16, 16, 16),
+    )
+    label_font = dejavu_font(20)
+    for index, path in enumerate(paths):
+        image = open_rgb(path)
+        image.thumbnail((tile_width, image_height), Image.Resampling.LANCZOS)
+        x = index % columns * tile_width
+        y = index // columns * (image_height + label_height)
+        canvas.paste(image, (x + (tile_width - image.width) // 2, y))
+        ImageDraw.Draw(canvas).text(
+            (x + 8, y + image_height + 12),
+            path.name,
+            font=label_font,
+            fill=(238, 238, 240),
+        )
+    output = renders_dir / "render_contact.jpg"
+    metadata = ImageMetadata(
+        "Contact sheet of solar eclipse analysis renders",
+        tuple(require_raw(raw_dir, name) for name in names),
+    )
+    save_jpeg(canvas, output, metadata, quality=94)
+    return output
+
+
 def progression_tile(rgb: Rgb16, metrics: DataRow) -> Image.Image:
     crop, _, _ = crop_around(
         rgb,
@@ -444,14 +608,21 @@ def render_progression(
 def render_all(
     raw_dir: Path,
     metrics_rows: list[DataRow],
+    crops_dir: Path,
     renders_dir: Path,
     final_dir: Path,
     decoder: RawDecoder,
 ) -> list[Path]:
     renders_dir.mkdir(parents=True, exist_ok=True)
     metrics = {str(row["file"]): row for row in metrics_rows}
-    created = render_long_exposure(raw_dir, renders_dir, decoder)
-    created.append(render_stack(raw_dir, renders_dir, metrics, decoder))
-    created.extend(render_details(raw_dir, renders_dir, metrics, decoder))
+    analysis_renders = render_long_exposure(raw_dir, renders_dir, decoder)
+    analysis_renders.append(render_stack(raw_dir, renders_dir, metrics, decoder))
+    analysis_renders.extend(render_details(raw_dir, renders_dir, metrics, decoder))
+    crop_contact = render_crop_contact(raw_dir, crops_dir, renders_dir, metrics)
+    montage = render_montage(raw_dir, crops_dir, renders_dir, metrics)
+    render_contact_path = render_contact(
+        raw_dir, renders_dir, analysis_renders, montage, sorted(metrics)
+    )
+    created = [*analysis_renders, crop_contact, montage, render_contact_path]
     created.extend(render_progression(raw_dir, final_dir, metrics, decoder))
     return created

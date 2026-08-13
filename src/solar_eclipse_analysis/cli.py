@@ -145,6 +145,7 @@ def run(arguments: CliArguments) -> None:
         created = render_all(
             paths.raw,
             analysis_rows,
+            paths.crops,
             paths.renders,
             paths.final,
             decoder,
