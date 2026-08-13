@@ -26,5 +26,5 @@ def test_edge_spread_does_not_require_raw_decoder(
 
     captured = capsys.readouterr()
     assert exit_info.value.code == 1
-    assert "Metrics not found" in captured.err
+    assert "No CR3 files found" in captured.err
     assert "rawpy" not in captured.err.casefold()

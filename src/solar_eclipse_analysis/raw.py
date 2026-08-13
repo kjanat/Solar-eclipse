@@ -1,9 +1,14 @@
+from enum import Enum
 from pathlib import Path
 
 import numpy as np
 import rawpy
 
 Rgb16 = np.ndarray[tuple[int, int, int], np.dtype[np.uint16]]
+
+
+class OutputColor(Enum):
+    SRGB = 1
 
 
 class RawDecoder:
@@ -36,7 +41,7 @@ class RawDecoder:
                 bright=1.0,
                 highlight_mode=highlight_mode,
                 gamma=(1.0, 1.0),
-                output_color=1,
+                output_color=OutputColor.SRGB,
             )
         rgb16 = np.asarray(rgb, dtype=np.uint16)
         if rgb16.ndim != 3 or rgb16.shape[2] != 3:

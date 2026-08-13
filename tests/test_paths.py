@@ -11,7 +11,7 @@ def test_defaults_resolve_from_project_root() -> None:
         paths = ProjectPaths.create(root)
 
         assert paths.raw == root / "source/raw"
-        assert paths.data == root / "analysis/data"
+        assert paths.crops == root / "analysis/crops"
 
 
 def test_absolute_override_is_preserved() -> None:

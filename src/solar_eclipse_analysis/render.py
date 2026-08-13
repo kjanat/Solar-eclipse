@@ -1,4 +1,3 @@
-import csv
 import gc
 import math
 from pathlib import Path
@@ -9,6 +8,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from solar_eclipse_analysis.analyze import crop_around
+from solar_eclipse_analysis.metadata import ImageMetadata, save_jpeg, save_png
+from solar_eclipse_analysis.models import DataRow
 from solar_eclipse_analysis.raw import RawDecoder, Rgb16
 
 matplotlib.use("Agg")
@@ -21,14 +22,6 @@ Rgb8 = np.ndarray[tuple[int, int, int], np.dtype[np.uint8]]
 Rgba64 = np.ndarray[tuple[int, int, int], np.dtype[np.float64]]
 
 
-def load_metrics(path: Path) -> dict[str, dict[str, str]]:
-    if not path.is_file():
-        raise FileNotFoundError(f"Metrics not found: {path}; run analyze first")
-    with path.open(newline="", encoding="utf-8") as stream:
-        rows = list(csv.DictReader(stream))
-    return {row["file"]: row for row in rows}
-
-
 def require_raw(raw_dir: Path, name: str) -> Path:
     path = raw_dir / name
     if not path.is_file():
@@ -36,9 +29,7 @@ def require_raw(raw_dir: Path, name: str) -> Path:
     return path
 
 
-def metric_crop(
-    rgb: Rgb16, metrics: dict[str, dict[str, str]], name: str, size: int
-) -> Rgb16:
+def metric_crop(rgb: Rgb16, metrics: dict[str, DataRow], name: str, size: int) -> Rgb16:
     if name not in metrics:
         raise RuntimeError(f"Metrics have no row for {name}")
     row = metrics[name]
@@ -111,9 +102,12 @@ def unsharp(image: Rgb8, sigma: float, amount: float) -> Rgb8:
 
 
 def render_long_exposure(
-    raw_dir: Path, renders_dir: Path, decoder: RawDecoder
+    raw_dir: Path,
+    renders_dir: Path,
+    decoder: RawDecoder,
 ) -> list[Path]:
-    rgb = decoder.decode(require_raw(raw_dir, "_J3A8490.CR3"), highlight=5)
+    name = "_J3A8490.CR3"
+    rgb = decoder.decode(require_raw(raw_dir, name), highlight=5)
     rgb = np.rot90(rgb, k=3)
     _, width, _ = rgb.shape
     scale = 2200 / rgb.shape[0]
@@ -131,7 +125,10 @@ def render_long_exposure(
         np.uint8
     )
     gold_path = renders_dir / "8490_long_exposure_gold.png"
-    Image.fromarray(gold).save(gold_path, compress_level=3)
+    metadata = ImageMetadata(
+        "Gold-toned long-exposure eclipse render", (require_raw(raw_dir, name),)
+    )
+    save_png(Image.fromarray(gold), gold_path, metadata, compress_level=3)
     linear: FloatRgb = np.asarray(rgb.astype(np.float32) / 65535, dtype=np.float32)
     linear_luminance: FloatImage = np.asarray(
         0.2126 * linear[:, :, 0] + 0.7152 * linear[:, :, 1] + 0.0722 * linear[:, :, 2],
@@ -148,15 +145,23 @@ def render_long_exposure(
     colored: Rgba64 = np.asarray(colormaps["magma"](mapped), dtype=np.float64)
     false_color: Rgb8 = np.asarray(colored[:, :, :3] * 255, dtype=np.uint8)
     false_color_path = renders_dir / "8490_linear_falsecolor_magma.png"
-    Image.fromarray(false_color).save(false_color_path, compress_level=3)
+    false_color_metadata = ImageMetadata(
+        "Magma false-color linear-luminance eclipse render",
+        (require_raw(raw_dir, name),),
+    )
+    save_png(
+        Image.fromarray(false_color),
+        false_color_path,
+        false_color_metadata,
+        compress_level=3,
+    )
     return [gold_path, false_color_path]
 
 
 def render_stack(
     raw_dir: Path,
     renders_dir: Path,
-    alignment_path: Path,
-    metrics: dict[str, dict[str, str]],
+    metrics: dict[str, DataRow],
     decoder: RawDecoder,
 ) -> Path:
     names = ["_J3A8507.CR3", "_J3A8508.CR3", "_J3A8509.CR3"]
@@ -213,17 +218,18 @@ def render_stack(
     stack = np.median(np.stack(aligned), axis=0).astype(np.uint16)
     output = unsharp(tonemap(stack, 99.7, 2.2, 4, 0.0005, 0.9), 1.0, 0.45)
     output_path = renders_dir / "8507-8509_aligned_median_stack.png"
-    Image.fromarray(output).save(output_path, compress_level=3)
-    with alignment_path.open("w", encoding="utf-8") as stream:
-        for name, (correlation, warp) in zip(names, transforms, strict=True):
-            _ = stream.write(f"{name} ECC={correlation} warp={warp.tolist()}\n")
+    metadata = ImageMetadata(
+        "Aligned median stack of _J3A8507.CR3 through _J3A8509.CR3",
+        tuple(require_raw(raw_dir, name) for name in names),
+    )
+    save_png(Image.fromarray(output), output_path, metadata, compress_level=3)
     return output_path
 
 
 def render_details(
     raw_dir: Path,
     renders_dir: Path,
-    metrics: dict[str, dict[str, str]],
+    metrics: dict[str, DataRow],
     decoder: RawDecoder,
 ) -> list[Path]:
     created: list[Path] = []
@@ -231,14 +237,25 @@ def render_details(
     crop = metric_crop(decoder.decode(require_raw(raw_dir, name)), metrics, name, 1200)
     clean = unsharp(tonemap(crop, 99.85, 2.15, 3.2, 0.0002, 0.75), 0.9, 0.35)
     clean_path = renders_dir / "8514_clean_unclipped_crescent.png"
-    Image.fromarray(clean).save(clean_path, compress_level=3)
+    metadata = ImageMetadata(
+        "Clean unclipped eclipse crescent render", (require_raw(raw_dir, name),)
+    )
+    save_png(Image.fromarray(clean), clean_path, metadata, compress_level=3)
     created.append(clean_path)
     monochrome = cv2.cvtColor(clean, cv2.COLOR_RGB2GRAY)
     monochrome = np.clip((monochrome.astype(np.float32) - 2) * 1.08, 0, 255).astype(
         np.uint8
     )
     monochrome_path = renders_dir / "8514_clean_monochrome.png"
-    Image.fromarray(monochrome, "L").save(monochrome_path, compress_level=3)
+    monochrome_metadata = ImageMetadata(
+        "Clean monochrome eclipse crescent render", (require_raw(raw_dir, name),)
+    )
+    save_png(
+        Image.fromarray(monochrome, "L"),
+        monochrome_path,
+        monochrome_metadata,
+        compress_level=3,
+    )
     created.append(monochrome_path)
 
     name = "_J3A8513.CR3"
@@ -247,7 +264,10 @@ def render_details(
     )
     detail = unsharp(tonemap(crop, 99.65, 2.2, 3.5, 0.0002, 0.85), 0.8, 0.4)
     detail_path = renders_dir / "8513_sharp_f16_detail.png"
-    Image.fromarray(detail).save(detail_path, compress_level=3)
+    metadata = ImageMetadata(
+        "Sharpened f/16 eclipse detail render", (require_raw(raw_dir, name),)
+    )
+    save_png(Image.fromarray(detail), detail_path, metadata, compress_level=3)
     created.append(detail_path)
     gray = cv2.cvtColor(detail, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255
     gradient_x: FloatImage = np.asarray(
@@ -268,12 +288,16 @@ def render_details(
     )
     edges: Rgb8 = np.asarray(colored_edges[:, :, :3] * 255, dtype=np.uint8)
     edges_path = renders_dir / "8513_edge_structure_falsecolor.png"
-    Image.fromarray(edges).save(edges_path, compress_level=3)
+    edge_metadata = ImageMetadata(
+        "Inferno false-color eclipse edge-structure render",
+        (require_raw(raw_dir, name),),
+    )
+    save_png(Image.fromarray(edges), edges_path, edge_metadata, compress_level=3)
     created.append(edges_path)
     return created
 
 
-def progression_tile(rgb: Rgb16, metrics: dict[str, str]) -> Image.Image:
+def progression_tile(rgb: Rgb16, metrics: DataRow) -> Image.Image:
     crop, _, _ = crop_around(
         rgb,
         int(float(metrics["sun_x"])),
@@ -313,7 +337,7 @@ def feathered_rgba(image: Image.Image) -> Image.Image:
     return Image.fromarray(np.clip(rgba * 255 + 0.5, 0, 255).astype(np.uint8), "RGBA")
 
 
-def format_shutter(value: str) -> str:
+def format_shutter(value: str | float) -> str:
     shutter = float(value)
     return f"{shutter:.1f} s" if shutter >= 0.1 else f"1/{round(1 / shutter)} s"
 
@@ -327,7 +351,7 @@ def dejavu_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
 def render_progression(
     raw_dir: Path,
     final_dir: Path,
-    metrics: dict[str, dict[str, str]],
+    metrics: dict[str, DataRow],
     decoder: RawDecoder,
 ) -> list[Path]:
     names = sorted(metrics)
@@ -385,7 +409,8 @@ def render_progression(
         canvas.paste(tile_rgba, (x, y), tile_rgba)
         short_id = Path(name).stem.replace("_J3A", "")
         settings = (
-            f"{format_shutter(row['shutter_s'])}  \u00b7  f/{float(row['aperture']):g}"
+            f"{format_shutter(float(row['shutter_s']))}  \u00b7  "
+            f"f/{float(row['aperture']):g}"
         )
         id_box = draw.textbbox((0, 0), short_id, font=id_font)
         settings_box = draw.textbbox((0, 0), settings, font=settings_font)
@@ -405,26 +430,28 @@ def render_progression(
     final_dir.mkdir(parents=True, exist_ok=True)
     png_path = final_dir / "eclipse_progression_amsterdam_urth_final_4k.png"
     jpg_path = final_dir / "eclipse_progression_amsterdam_urth_final_1920.jpg"
-    canvas.save(png_path, compress_level=4)
+    metadata = ImageMetadata(
+        "Partial solar eclipse progression assembled from 21 CR3 frames",
+        tuple(require_raw(raw_dir, name) for name in names),
+    )
+    save_png(canvas, png_path, metadata, compress_level=4)
     preview = canvas.copy()
     preview.thumbnail((1920, 1920), Image.Resampling.LANCZOS)
-    preview.save(jpg_path, quality=94, subsampling=0)
+    save_jpeg(preview, jpg_path, metadata, quality=94, subsampling=0)
     return [png_path, jpg_path]
 
 
 def render_all(
     raw_dir: Path,
-    metrics_path: Path,
+    metrics_rows: list[DataRow],
     renders_dir: Path,
     final_dir: Path,
-    alignment_path: Path,
     decoder: RawDecoder,
 ) -> list[Path]:
     renders_dir.mkdir(parents=True, exist_ok=True)
-    alignment_path.parent.mkdir(parents=True, exist_ok=True)
-    metrics = load_metrics(metrics_path)
+    metrics = {str(row["file"]): row for row in metrics_rows}
     created = render_long_exposure(raw_dir, renders_dir, decoder)
-    created.append(render_stack(raw_dir, renders_dir, alignment_path, metrics, decoder))
+    created.append(render_stack(raw_dir, renders_dir, metrics, decoder))
     created.extend(render_details(raw_dir, renders_dir, metrics, decoder))
     created.extend(render_progression(raw_dir, final_dir, metrics, decoder))
     return created

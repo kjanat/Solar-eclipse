@@ -1,26 +1,18 @@
-import csv
 from pathlib import Path
 
+from solar_eclipse_analysis.models import DataRow
 from solar_eclipse_analysis.paths import raw_files
 from solar_eclipse_analysis.raw import RawDecoder
 
 
-def create_inventory(
-    raw_dir: Path, output: Path, decoder: RawDecoder
-) -> list[dict[str, str | int | float]]:
+def create_inventory(raw_dir: Path, decoder: RawDecoder) -> list[DataRow]:
     files = raw_files(raw_dir)
     if not files:
         raise FileNotFoundError(f"No CR3 files found in {raw_dir}; run extract first")
-    rows = [decoder.inspect(path) for path in files]
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(rows[0]), lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
-    return rows
+    return [decoder.inspect(path) for path in files]
 
 
-def print_inventory(rows: list[dict[str, str | int | float]]) -> None:
+def print_inventory(rows: list[DataRow]) -> None:
     for row in rows:
         shutter = float(row["shutter_s"])
         shutter_label = (

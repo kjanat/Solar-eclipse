@@ -1,10 +1,11 @@
-import csv
 import math
 from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image
+
+from solar_eclipse_analysis.models import DataRow
 
 FloatImage = np.ndarray[tuple[int, ...], np.dtype[np.float32]]
 IntImage = np.ndarray[tuple[int, int], np.dtype[np.int32]]
@@ -97,30 +98,22 @@ def measure_edge(path: Path) -> tuple[float, int]:
 
 
 def calculate_edge_spread(
-    metrics_path: Path, crops_dir: Path, output: Path
-) -> list[dict[str, str]]:
-    if not metrics_path.is_file():
-        raise FileNotFoundError(f"Metrics not found: {metrics_path}; run analyze first")
-    with metrics_path.open(newline="", encoding="utf-8") as stream:
-        rows = list(csv.DictReader(stream))
+    metrics_rows: list[DataRow], crops_dir: Path
+) -> list[DataRow]:
+    rows = [dict(row) for row in metrics_rows]
     if not rows:
-        raise RuntimeError(f"Metrics file is empty: {metrics_path}")
+        raise RuntimeError("No analysis metrics available")
     for row in rows:
-        crop = crops_dir / f"{Path(row['file']).stem}.jpg"
+        crop = crops_dir / f"{Path(str(row['file'])).stem}.jpg"
         if not crop.is_file():
             raise FileNotFoundError(f"Analysis crop not found: {crop}")
         width, samples = measure_edge(crop)
-        row["edge_10_90_px"] = str(width)
-        row["edge_samples"] = str(samples)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(rows[0]), lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
+        row["edge_10_90_px"] = width
+        row["edge_samples"] = samples
     return rows
 
 
-def print_edge_rankings(rows: list[dict[str, str]]) -> None:
+def print_edge_rankings(rows: list[DataRow]) -> None:
     print("RANK 10-90 edge width (lower = sharper)")
     for row in sorted(
         rows,

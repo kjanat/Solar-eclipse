@@ -19,7 +19,6 @@ class CliArguments(argparse.Namespace):
     root: Path
     archives: Path | None
     raw: Path | None
-    data: Path | None
     crops: Path | None
     renders: Path | None
     final: Path | None
@@ -31,7 +30,6 @@ class CliArguments(argparse.Namespace):
         self.root = Path.cwd()
         self.archives = None
         self.raw = None
-        self.data = None
         self.crops = None
         self.renders = None
         self.final = None
@@ -44,7 +42,6 @@ def project_paths(arguments: CliArguments) -> ProjectPaths:
         root=arguments.root,
         archives=arguments.archives,
         raw=arguments.raw,
-        data=arguments.data,
         crops=arguments.crops,
         renders=arguments.renders,
         final=arguments.final,
@@ -63,9 +60,6 @@ def add_path_arguments(parser: argparse.ArgumentParser) -> None:
     )
     _ = parser.add_argument(
         "--raw", type=Path, help="extracted CR3 directory (default: source/raw)"
-    )
-    _ = parser.add_argument(
-        "--data", type=Path, help="CSV/checkpoint directory (default: analysis/data)"
     )
     _ = parser.add_argument(
         "--crops", type=Path, help="analysis crop directory (default: analysis/crops)"
@@ -113,46 +107,46 @@ def parse_arguments(argv: Sequence[str] | None) -> CliArguments:
 
 def run(arguments: CliArguments) -> None:
     paths = project_paths(arguments)
+    decoder = RawDecoder()
+    inventory_rows = (
+        create_inventory(paths.raw, decoder) if arguments.command != "extract" else []
+    )
     if arguments.command in {"extract", "all"}:
         extracted = extract_raw_archives(paths.archives, paths.raw)
         print(f"RAW files ready: {len(extracted)} in {paths.raw}")
         if arguments.command == "extract":
             return
+        inventory_rows = create_inventory(paths.raw, decoder)
     if arguments.command in {"inventory", "all"}:
-        decoder = RawDecoder()
-        rows = create_inventory(paths.raw, paths.data / "inventory.csv", decoder)
-        print_inventory(rows)
+        print_inventory(inventory_rows)
         if arguments.command == "inventory":
             return
-    if arguments.command in {"analyze", "all"}:
-        decoder = RawDecoder()
-        rows = analyze_raws(
+    analysis_rows = (
+        analyze_raws(
             paths.raw,
-            paths.data / "inventory.csv",
-            paths.data / "metrics.csv",
-            paths.data / "metrics.jsonl",
+            inventory_rows,
             paths.crops,
             decoder,
             arguments.crop_size,
         )
-        print_rankings(rows)
+        if arguments.command in {"analyze", "edge-spread", "render", "all"}
+        else []
+    )
+    if arguments.command in {"analyze", "all"}:
+        print_rankings(analysis_rows)
         if arguments.command == "analyze":
             return
     if arguments.command in {"edge-spread", "all"}:
-        rows = calculate_edge_spread(
-            paths.data / "metrics.csv", paths.crops, paths.data / "edge_spread.csv"
-        )
-        print_edge_rankings(rows)
+        edge_rows = calculate_edge_spread(analysis_rows, paths.crops)
+        print_edge_rankings(edge_rows)
         if arguments.command == "edge-spread":
             return
     if arguments.command in {"render", "all"}:
-        decoder = RawDecoder()
         created = render_all(
             paths.raw,
-            paths.data / "metrics.csv",
+            analysis_rows,
             paths.renders,
             paths.final,
-            paths.data / "8507-8509_alignment.txt",
             decoder,
         )
         print("Created:")

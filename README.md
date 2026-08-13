@@ -8,6 +8,7 @@ Requirements:
 
 - Python 3.14
 - [uv](https://docs.astral.sh/uv/)
+- [ExifTool](https://exiftool.org/) for metadata propagation
 
 Install the locked Python environment:
 
@@ -33,13 +34,17 @@ uv run solar-eclipse-analysis render
 
 `render` writes diagnostic images to `analysis/renders/` and the corrected 4K/1920 progression to `final/`. It does not regenerate the early boxed diagnostic montage retained in the archive.
 
+Rendered PNG and JPEG files preserve every populated, portable photographic EXIF field available in the CR3 sources when its value is shared by all contributing frames. This includes authorship, copyright, camera/lens, capture time, exposure, metering, flash, white balance, sensor resolution, and XMP rating data. All distinct source XMP subjects are retained in source order. Output geometry, orientation, color space, rendering status, description, software, and XMP provenance describe the generated file itself. Mixed composite settings are omitted rather than misrepresented.
+
+GPS and location metadata, serial numbers, unique identifiers, firmware, device telemetry, embedded previews, filesystem data, CR3 container/track fields, and Canon MakerNotes are never copied. MakerNotes cannot be safely transplanted individually and their original block also contains excluded identifiers and stale RAW geometry. The sources contain no IPTC metadata to preserve.
+
 Run tests:
 
 ```bash
 uv run pytest
 ```
 
-All paths default to locations inside the current project root. Use `--root` to run against another checkout, or override individual locations with `--archives`, `--raw`, `--data`, `--crops`, `--renders`, and `--final`. Relative overrides resolve against `--root`; absolute paths also work.
+All paths default to locations inside the current project root. Use `--root` to run against another checkout, or override individual locations with `--archives`, `--raw`, `--crops`, `--renders`, and `--final`. Relative overrides resolve against `--root`; absolute paths also work.
 
 ```bash
 uv run solar-eclipse-analysis \
@@ -51,19 +56,19 @@ uv run solar-eclipse-analysis \
 ## Layout
 
 - `final/` - finished 4K PNG and 1920px JPEG compositions
-- `analysis/data/` - inventory, metrics, edge measurements, and alignment data
 - `analysis/renders/` - generated diagnostic and processed images
 - `src/solar_eclipse_analysis/` - maintained Python package and CLI pipeline
 - `analysis/scripts/` - compatibility entrypoints for the original script names
-- `docs/` - analysis conversation and processing notes
-- `source/raw-archives/` - original Canon CR3 photographs, preserved as ZIP archives
-- `archive/bundles/` - original downloadable analysis bundle and preserved extracted artifacts
-- `archive/duplicates/` - intentionally preserved duplicate exports
+- `docs/` - local analysis conversation and processing notes (not tracked)
+- `source/` - local Canon CR3 sources and archives (not tracked)
+- `archive/` - local preserved bundles and duplicate exports (not tracked)
 
 ## Notes
 
-The two RAW archives are complementary: `8487-8489` and `8490-8514`. The `extract` stage combines them under `source/raw/` without overwriting a conflicting file.
+The two local RAW archives are complementary: `8487-8489` and `8490-8514`. The `extract` stage combines them under `source/raw/` without overwriting a conflicting file.
 
 Archived duplicates are retained intentionally. Canonical working copies live in `final/` and `analysis/`.
 
-![final](final/eclipse_progression_amsterdam_urth_final_1920.jpg)
+Inventory, metrics, edge measurements, and alignment transforms pass directly between pipeline stages in memory. Historical files under `analysis/data/` may remain locally but are not read, regenerated, or tracked.
+
+![Final 4K solar eclipse progression](final/eclipse_progression_amsterdam_urth_final_4k.png)

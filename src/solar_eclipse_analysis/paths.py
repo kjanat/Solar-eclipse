@@ -12,7 +12,6 @@ class ProjectPaths:
     root: Path
     archives: Path
     raw: Path
-    data: Path
     crops: Path
     renders: Path
     final: Path
@@ -23,7 +22,6 @@ class ProjectPaths:
         root: Path,
         archives: Path | None = None,
         raw: Path | None = None,
-        data: Path | None = None,
         crops: Path | None = None,
         renders: Path | None = None,
         final: Path | None = None,
@@ -33,7 +31,6 @@ class ProjectPaths:
             root=project_root,
             archives=resolve_path(project_root, archives, "source/raw-archives"),
             raw=resolve_path(project_root, raw, "source/raw"),
-            data=resolve_path(project_root, data, "analysis/data"),
             crops=resolve_path(project_root, crops, "analysis/crops"),
             renders=resolve_path(project_root, renders, "analysis/renders"),
             final=resolve_path(project_root, final, "final"),

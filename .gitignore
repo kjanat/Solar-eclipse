@@ -6,6 +6,13 @@ dist/
 analysis/crops/
 analysis/data/metrics.jsonl
 source/raw/
+docs/
+archive/
+source/
+analysis/data/8507-8509_alignment.txt
+analysis/data/edge_spread.csv
+analysis/data/inventory.csv
+analysis/data/metrics.csv
 # Created by https://gitignore.kjanat.com/api/python,linux
 # Edit at https://gitignore.kjanat.com?templates=python,linux
 
