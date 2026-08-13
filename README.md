@@ -72,3 +72,7 @@ uv run solar-eclipse-analysis \
 - `src/solar_eclipse_analysis/` - maintained Python package and CLI pipeline
 
 Inventory, metrics, edge measurements, and alignment transforms pass directly between pipeline stages in memory. Historical files under `analysis/data/` may remain locally but are not read, regenerated, or tracked.
+
+## License
+
+The software source code, tests, and software configuration are available under the MIT License. Photographs, RAW images, renders, montages, contact sheets, compositions, and all other visual works are **not** MIT-licensed: © 2026 Kaj Kowalski, All Rights Reserved. See [`LICENSE.md`](LICENSE.md) for the complete terms.

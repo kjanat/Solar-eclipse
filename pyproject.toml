@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Portable RAW analysis pipeline for the 2026 Amsterdam solar eclipse"
 readme = "README.md"
 requires-python = ">=3.14"
+license = "MIT"
 authors = [{ name = "Kaj Kowalski", email = "info@kajkowalski.nl" }]
 dependencies = [
   "matplotlib>=3.11.1",
