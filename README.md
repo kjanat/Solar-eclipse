@@ -70,6 +70,5 @@ uv run solar-eclipse-analysis \
 - `source/raw/` - external Canon CR3 input (not included)
 - `source/raw-archives/` - external RAW ZIP input used by `extract` (not included)
 - `src/solar_eclipse_analysis/` - maintained Python package and CLI pipeline
-- `analysis/scripts/` - compatibility entrypoints for the original script names
 
 Inventory, metrics, edge measurements, and alignment transforms pass directly between pipeline stages in memory. Historical files under `analysis/data/` may remain locally but are not read, regenerated, or tracked.
