@@ -8,7 +8,6 @@ Requirements:
 
 - Python 3.14
 - [uv](https://docs.astral.sh/uv/)
-- LibRaw available to the operating system's shared-library loader
 
 Install the locked Python environment:
 
@@ -32,23 +31,22 @@ uv run solar-eclipse-analysis edge-spread
 uv run solar-eclipse-analysis render
 ```
 
+`render` writes diagnostic images to `analysis/renders/` and the corrected 4K/1920 progression to `final/`. It does not regenerate the early boxed diagnostic montage retained in the archive.
+
 Run tests:
 
 ```bash
 uv run pytest
 ```
 
-All paths default to locations inside the current project root. Use `--root` to run against another checkout, or override individual locations with `--archives`, `--raw`, `--data`, `--crops`, and `--renders`. Relative overrides resolve against `--root`; absolute paths also work.
+All paths default to locations inside the current project root. Use `--root` to run against another checkout, or override individual locations with `--archives`, `--raw`, `--data`, `--crops`, `--renders`, and `--final`. Relative overrides resolve against `--root`; absolute paths also work.
 
 ```bash
 uv run solar-eclipse-analysis \
   --root /path/to/project \
   --raw /path/to/cr3-files \
-  --libraw /path/to/libraw.so \
   inventory
 ```
-
-LibRaw is discovered through the platform loader. `--libraw` is only needed when it is installed in a nonstandard location.
 
 ## Layout
 

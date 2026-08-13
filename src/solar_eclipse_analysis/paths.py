@@ -15,6 +15,7 @@ class ProjectPaths:
     data: Path
     crops: Path
     renders: Path
+    final: Path
 
     @classmethod
     def create(
@@ -25,6 +26,7 @@ class ProjectPaths:
         data: Path | None = None,
         crops: Path | None = None,
         renders: Path | None = None,
+        final: Path | None = None,
     ) -> ProjectPaths:
         project_root = root.resolve()
         return cls(
@@ -34,11 +36,8 @@ class ProjectPaths:
             data=resolve_path(project_root, data, "analysis/data"),
             crops=resolve_path(project_root, crops, "analysis/crops"),
             renders=resolve_path(project_root, renders, "analysis/renders"),
+            final=resolve_path(project_root, final, "final"),
         )
-
-    def ensure_outputs(self) -> None:
-        for directory in (self.raw, self.data, self.crops, self.renders):
-            directory.mkdir(parents=True, exist_ok=True)
 
 
 def raw_files(directory: Path) -> list[Path]:

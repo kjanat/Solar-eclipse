@@ -37,3 +37,18 @@ def test_refuses_to_overwrite_different_file() -> None:
 
         with pytest.raises(FileExistsError):
             extract_raw_archives(archives, raw)
+
+
+def test_refuses_equal_size_different_file() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        archives = root / "archives"
+        raw = root / "raw"
+        archives.mkdir()
+        raw.mkdir()
+        (raw / "photo.CR3").write_bytes(b"aaaa")
+        with zipfile.ZipFile(archives / "photos.zip", "w") as archive:
+            archive.writestr("photo.CR3", b"bbbb")
+
+        with pytest.raises(FileExistsError):
+            extract_raw_archives(archives, raw)

@@ -1,12 +1,12 @@
 import csv
 from pathlib import Path
 
-from solar_eclipse_analysis.libraw import LibRaw
 from solar_eclipse_analysis.paths import raw_files
+from solar_eclipse_analysis.raw import RawDecoder
 
 
 def create_inventory(
-    raw_dir: Path, output: Path, decoder: LibRaw
+    raw_dir: Path, output: Path, decoder: RawDecoder
 ) -> list[dict[str, str | int | float]]:
     files = raw_files(raw_dir)
     if not files:
@@ -14,7 +14,7 @@ def create_inventory(
     rows = [decoder.inspect(path) for path in files]
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     return rows

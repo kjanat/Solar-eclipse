@@ -7,8 +7,10 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from solar_eclipse_analysis.libraw import LibRaw, Rgb16
 from solar_eclipse_analysis.paths import raw_files
+from solar_eclipse_analysis.raw import RawDecoder, Rgb16
+
+CHECKPOINT_VERSION = 1
 
 
 def locate_sun(rgb: Rgb16) -> tuple[int, int]:
@@ -108,7 +110,7 @@ def analyze_raws(
     metrics_path: Path,
     checkpoint_path: Path,
     crops_dir: Path,
-    decoder: LibRaw,
+    decoder: RawDecoder,
     crop_size: int = 1400,
 ) -> list[dict[str, str | int | float]]:
     files = raw_files(raw_dir)
@@ -134,15 +136,26 @@ def analyze_raws(
                         if isinstance(key, str) and isinstance(value, (str, int, float))
                     }
                     filename = parsed_row.get("file")
-                    if isinstance(filename, str):
+                    if (
+                        isinstance(filename, str)
+                        and parsed_row.get("checkpoint_version") == CHECKPOINT_VERSION
+                        and parsed_row.get("crop_size") == crop_size
+                    ):
                         completed[filename] = parsed_row
     rows: list[dict[str, str | int | float]] = []
     for index, path in enumerate(files, 1):
-        if path.name in completed:
+        crop_path = crops_dir / f"{path.stem}.jpg"
+        checkpoint_row = completed.get(path.name)
+        if (
+            checkpoint_row is not None
+            and checkpoint_row.get("source_bytes") == path.stat().st_size
+            and checkpoint_row.get("source_mtime_ns") == path.stat().st_mtime_ns
+            and crop_path.is_file()
+        ):
             print(
                 f"[{index:02d}/{len(files):02d}] {path.name} (checkpoint)", flush=True
             )
-            rows.append(completed[path.name])
+            rows.append(checkpoint_row)
             continue
         if path.name not in inventory:
             raise RuntimeError(f"Inventory has no row for {path.name}")
@@ -154,19 +167,25 @@ def analyze_raws(
         row: dict[str, str | int | float] = dict(inventory[path.name])
         row.update({"sun_x": center_x, "sun_y": center_y, "crop_x0": x0, "crop_y0": y0})
         row.update(measurements)
+        row.update({
+            "checkpoint_version": CHECKPOINT_VERSION,
+            "crop_size": crop_size,
+            "source_bytes": path.stat().st_size,
+            "source_mtime_ns": path.stat().st_mtime_ns,
+        })
         row["detail_score"] = (
             measurements["edge_p995"]
             / max(measurements["edge_width_proxy_px"], 0.1) ** 0.5
             * math.exp(-measurements["clip_all_pct"] / 6.0)
         )
         rows.append(row)
+        save_diagnostic(crop, crop_path)
         with checkpoint_path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row) + "\n")
-        save_diagnostic(crop, crops_dir / f"{path.stem}.jpg")
     if not rows:
         raise RuntimeError("No RAW files analyzed")
     with metrics_path.open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     return rows

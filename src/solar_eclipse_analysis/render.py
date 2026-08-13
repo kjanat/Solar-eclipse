@@ -6,10 +6,11 @@ from pathlib import Path
 import cv2
 import matplotlib
 import numpy as np
+from matplotlib import font_manager
 from PIL import Image, ImageDraw, ImageFont
 
 from solar_eclipse_analysis.analyze import crop_around
-from solar_eclipse_analysis.libraw import LibRaw, Rgb16
+from solar_eclipse_analysis.raw import RawDecoder, Rgb16
 
 matplotlib.use("Agg")
 from matplotlib import colormaps
@@ -87,7 +88,7 @@ def unsharp(image: np.ndarray, sigma: float, amount: float) -> np.ndarray:
 
 
 def render_long_exposure(
-    raw_dir: Path, renders_dir: Path, decoder: LibRaw
+    raw_dir: Path, renders_dir: Path, decoder: RawDecoder
 ) -> list[Path]:
     rgb = decoder.decode(require_raw(raw_dir, "_J3A8490.CR3"), highlight=5)
     rgb = np.rot90(rgb, k=3)
@@ -123,7 +124,7 @@ def render_stack(
     renders_dir: Path,
     alignment_path: Path,
     metrics: dict[str, dict[str, str]],
-    decoder: LibRaw,
+    decoder: RawDecoder,
 ) -> Path:
     names = ["_J3A8507.CR3", "_J3A8508.CR3", "_J3A8509.CR3"]
     crops: list[Rgb16] = []
@@ -190,7 +191,7 @@ def render_details(
     raw_dir: Path,
     renders_dir: Path,
     metrics: dict[str, dict[str, str]],
-    decoder: LibRaw,
+    decoder: RawDecoder,
 ) -> list[Path]:
     created: list[Path] = []
     name = "_J3A8514.CR3"
@@ -230,57 +231,137 @@ def render_details(
     return created
 
 
-def render_montage(crops_dir: Path, renders_dir: Path) -> Path:
-    files = sorted(crops_dir.glob("*.jpg"))
-    if len(files) < 2:
-        raise RuntimeError(f"At least two analysis crops required in {crops_dir}")
-    width, height = 2800, 1050
-    canvas = Image.new("RGB", (width, height), (2, 2, 4))
+def progression_tile(rgb: Rgb16, metrics: dict[str, str]) -> Image.Image:
+    crop, _, _ = crop_around(
+        rgb,
+        int(float(metrics["sun_x"])),
+        int(float(metrics["sun_y"])),
+        900,
+    )
+    tile = unsharp(tonemap(crop, 99.8, 2.2, 5.0, 0, 0.9), 0.8, 0.25)
+    tile = cv2.resize(tile, (300, 300), interpolation=cv2.INTER_AREA)
+    return Image.fromarray(tile, "RGB")
+
+
+def feathered_rgba(image: Image.Image) -> Image.Image:
+    rgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
+    size = rgb.shape[0]
+    y_grid, x_grid = np.mgrid[0:size, 0:size]
+    center = (size - 1) / 2
+    radius = np.sqrt((x_grid - center) ** 2 + (y_grid - center) ** 2) / (size / 2)
+    radial = np.clip((1.02 - radius) / (1.02 - 0.70), 0, 1)
+    radial = radial * radial * (3 - 2 * radial)
+    luminance = 0.2126 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.0722 * rgb[:, :, 2]
+    content = np.sqrt(np.clip((luminance - 0.008) / 0.12, 0, 1))
+    alpha = radial * np.maximum(content, 0.16)
+    rgba = np.dstack([rgb, alpha])
+    return Image.fromarray(np.clip(rgba * 255 + 0.5, 0, 255).astype(np.uint8), "RGBA")
+
+
+def format_shutter(value: str) -> str:
+    shutter = float(value)
+    return f"{shutter:.1f} s" if shutter >= 0.1 else f"1/{round(1 / shutter)} s"
+
+
+def dejavu_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    weight = "bold" if bold else "normal"
+    path = font_manager.findfont(
+        font_manager.FontProperties(family="DejaVu Sans", weight=weight)
+    )
+    return ImageFont.truetype(path, size)
+
+
+def render_progression(
+    raw_dir: Path,
+    final_dir: Path,
+    metrics: dict[str, dict[str, str]],
+    decoder: RawDecoder,
+) -> list[Path]:
+    names = sorted(metrics)
+    if len(names) < 2:
+        raise RuntimeError("At least two metric rows required for the progression")
+    width, height = 3840, 1280
+    canvas = Image.new("RGB", (width, height), (2, 2, 3))
     draw = ImageDraw.Draw(canvas)
-    font = ImageFont.load_default(size=24)
-    small = ImageFont.load_default(size=16)
-    for index, path in enumerate(files):
-        image = Image.open(path).convert("RGB")
-        gray = np.asarray(image.convert("L"))
-        y_values, x_values = np.where(gray > 22)
-        if len(x_values):
-            image = image.crop((
-                max(int(x_values.min()) - 25, 0),
-                max(int(y_values.min()) - 25, 0),
-                min(int(x_values.max()) + 26, image.width),
-                min(int(y_values.max()) + 26, image.height),
-            ))
-        image.thumbnail((155, 155), Image.Resampling.LANCZOS)
-        x = 90 + index * (width - 180) / (len(files) - 1)
-        y = 500 - 250 * math.sin(index / (len(files) - 1) * math.pi)
-        canvas.paste(image, (round(x - image.width / 2), round(y - image.height / 2)))
-        draw.text(
-            (round(x - 44), round(y + 95)),
-            path.stem.replace("_J3A", ""),
-            fill=(160, 160, 170),
-            font=small,
+    title_font = dejavu_font(52, bold=True)
+    metadata_font = dejavu_font(25)
+    filter_font = dejavu_font(22)
+    copyright_font = dejavu_font(24)
+    id_font = dejavu_font(20, bold=True)
+    settings_font = dejavu_font(16)
+    draw.text((86, 70), "PARTIAL SOLAR ECLIPSE", font=title_font, fill=(242, 242, 244))
+    draw.text(
+        (88, 139),
+        "12 AUG 2026  \u00b7  Amsterdam, Netherlands  \u00b7  Canon EOS R7  \u00b7  "
+        "RF-S 18\u2013150mm F3.5\u20136.3 IS STM @ 150 mm  \u00b7  ISO 160  \u00b7  21 CR3 frames",
+        font=metadata_font,
+        fill=(154, 154, 162),
+    )
+    draw.text(
+        (88, 177),
+        "Filters: Urth ND1000 \u00d7 ND8  \u00b7  stacked  \u00b7  \u224813 stops combined",
+        font=filter_font,
+        fill=(126, 126, 134),
+    )
+    copyright_text = "\u00a9 2026 Kaj Kowalski"
+    copyright_box = draw.textbbox((0, 0), copyright_text, font=copyright_font)
+    draw.text(
+        (width - 86 - (copyright_box[2] - copyright_box[0]), 84),
+        copyright_text,
+        font=copyright_font,
+        fill=(196, 196, 202),
+    )
+    display_size = 250
+    for index, name in enumerate(names):
+        row = metrics[name]
+        progress = index / (len(names) - 1)
+        center_x = 155 + progress * (width - 310)
+        center_y = 690 - 300 * math.sin(math.pi * progress)
+        rgb = decoder.decode(require_raw(raw_dir, name), highlight=3)
+        tile = progression_tile(rgb, row).resize(
+            (display_size, display_size), Image.Resampling.LANCZOS
         )
-    draw.text(
-        (70, 60), "Eclipse progression - RAW sequence", fill=(235, 235, 240), font=font
-    )
-    draw.text(
-        (70, 94),
-        "Centered montage; positions are compositional, not the physical solar trajectory.",
-        fill=(145, 145, 155),
-        font=small,
-    )
-    output = renders_dir / "raw_eclipse_progression_montage.png"
-    canvas.save(output, compress_level=3)
-    return output
+        del rgb
+        tile_rgba = feathered_rgba(tile)
+        x = round(center_x - display_size / 2)
+        y = round(center_y - display_size / 2)
+        canvas.paste(tile_rgba, (x, y), tile_rgba)
+        short_id = Path(name).stem.replace("_J3A", "")
+        settings = (
+            f"{format_shutter(row['shutter_s'])}  \u00b7  f/{float(row['aperture']):g}"
+        )
+        id_box = draw.textbbox((0, 0), short_id, font=id_font)
+        settings_box = draw.textbbox((0, 0), settings, font=settings_font)
+        label_y = y + display_size + 8
+        draw.text(
+            (round(center_x - (id_box[2] - id_box[0]) / 2), label_y),
+            short_id,
+            font=id_font,
+            fill=(198, 198, 203),
+        )
+        draw.text(
+            (round(center_x - (settings_box[2] - settings_box[0]) / 2), label_y + 28),
+            settings,
+            font=settings_font,
+            fill=(116, 116, 124),
+        )
+    final_dir.mkdir(parents=True, exist_ok=True)
+    png_path = final_dir / "eclipse_progression_amsterdam_urth_final_4k.png"
+    jpg_path = final_dir / "eclipse_progression_amsterdam_urth_final_1920.jpg"
+    canvas.save(png_path, compress_level=4)
+    preview = canvas.copy()
+    preview.thumbnail((1920, 1920), Image.Resampling.LANCZOS)
+    preview.save(jpg_path, quality=94, subsampling=0)
+    return [png_path, jpg_path]
 
 
 def render_all(
     raw_dir: Path,
     metrics_path: Path,
-    crops_dir: Path,
     renders_dir: Path,
+    final_dir: Path,
     alignment_path: Path,
-    decoder: LibRaw,
+    decoder: RawDecoder,
 ) -> list[Path]:
     renders_dir.mkdir(parents=True, exist_ok=True)
     alignment_path.parent.mkdir(parents=True, exist_ok=True)
@@ -288,5 +369,5 @@ def render_all(
     created = render_long_exposure(raw_dir, renders_dir, decoder)
     created.append(render_stack(raw_dir, renders_dir, alignment_path, metrics, decoder))
     created.extend(render_details(raw_dir, renders_dir, metrics, decoder))
-    created.append(render_montage(crops_dir, renders_dir))
+    created.extend(render_progression(raw_dir, final_dir, metrics, decoder))
     return created
