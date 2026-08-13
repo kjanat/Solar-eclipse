@@ -31,12 +31,12 @@ def test_refuses_to_overwrite_different_file() -> None:
         raw = root / "raw"
         archives.mkdir()
         raw.mkdir()
-        (raw / "photo.CR3").write_bytes(b"existing")
+        _ = (raw / "photo.CR3").write_bytes(b"existing")
         with zipfile.ZipFile(archives / "photos.zip", "w") as archive:
             archive.writestr("photo.CR3", b"different-size")
 
         with pytest.raises(FileExistsError):
-            extract_raw_archives(archives, raw)
+            _ = extract_raw_archives(archives, raw)
 
 
 def test_refuses_equal_size_different_file() -> None:
@@ -46,9 +46,9 @@ def test_refuses_equal_size_different_file() -> None:
         raw = root / "raw"
         archives.mkdir()
         raw.mkdir()
-        (raw / "photo.CR3").write_bytes(b"aaaa")
+        _ = (raw / "photo.CR3").write_bytes(b"aaaa")
         with zipfile.ZipFile(archives / "photos.zip", "w") as archive:
             archive.writestr("photo.CR3", b"bbbb")
 
         with pytest.raises(FileExistsError):
-            extract_raw_archives(archives, raw)
+            _ = extract_raw_archives(archives, raw)

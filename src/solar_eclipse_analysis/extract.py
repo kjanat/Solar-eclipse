@@ -52,7 +52,7 @@ def extract_raw_archives(archives_dir: Path, raw_dir: Path) -> list[Path]:
                 try:
                     with archive.open(member) as source, temporary.open("xb") as target:
                         shutil.copyfileobj(source, target)
-                    temporary.replace(destination)
+                    _ = temporary.replace(destination)
                 except BaseException:
                     temporary.unlink(missing_ok=True)
                     raise

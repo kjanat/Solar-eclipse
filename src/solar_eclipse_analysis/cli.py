@@ -2,6 +2,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 from solar_eclipse_analysis.analyze import analyze_raws, print_rankings
 from solar_eclipse_analysis.edge import calculate_edge_spread, print_edge_rankings
@@ -11,8 +12,34 @@ from solar_eclipse_analysis.paths import ProjectPaths
 from solar_eclipse_analysis.raw import RawDecoder
 from solar_eclipse_analysis.render import render_all
 
+Command = Literal["extract", "inventory", "analyze", "edge-spread", "render", "all"]
 
-def project_paths(arguments: argparse.Namespace) -> ProjectPaths:
+
+class CliArguments(argparse.Namespace):
+    root: Path
+    archives: Path | None
+    raw: Path | None
+    data: Path | None
+    crops: Path | None
+    renders: Path | None
+    final: Path | None
+    crop_size: int
+    command: Command | None
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.root = Path.cwd()
+        self.archives = None
+        self.raw = None
+        self.data = None
+        self.crops = None
+        self.renders = None
+        self.final = None
+        self.crop_size = 1400
+        self.command = None
+
+
+def project_paths(arguments: CliArguments) -> ProjectPaths:
     return ProjectPaths.create(
         root=arguments.root,
         archives=arguments.archives,
@@ -25,33 +52,33 @@ def project_paths(arguments: argparse.Namespace) -> ProjectPaths:
 
 
 def add_path_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
+    _ = parser.add_argument(
         "--root",
         type=Path,
         default=Path.cwd(),
         help="project root (default: current directory)",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--archives", type=Path, help="RAW ZIP directory (default: source/raw-archives)"
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--raw", type=Path, help="extracted CR3 directory (default: source/raw)"
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--data", type=Path, help="CSV/checkpoint directory (default: analysis/data)"
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--crops", type=Path, help="analysis crop directory (default: analysis/crops)"
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--renders",
         type=Path,
         help="render output directory (default: analysis/renders)",
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--final", type=Path, help="final output directory (default: final)"
     )
-    parser.add_argument("--crop-size", type=int, default=1400)
+    _ = parser.add_argument("--crop-size", type=int, default=1400)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -61,22 +88,30 @@ def parser() -> argparse.ArgumentParser:
     )
     add_path_arguments(root)
     subcommands = root.add_subparsers(dest="command", required=True)
-    subcommands.add_parser("extract", help="extract CR3 files from source archives")
-    subcommands.add_parser("inventory", help="write RAW metadata inventory")
-    subcommands.add_parser("analyze", help="measure RAW clipping and edge detail")
-    subcommands.add_parser(
+    _ = subcommands.add_parser("extract", help="extract CR3 files from source archives")
+    _ = subcommands.add_parser("inventory", help="write RAW metadata inventory")
+    _ = subcommands.add_parser("analyze", help="measure RAW clipping and edge detail")
+    _ = subcommands.add_parser(
         "edge-spread", help="measure 10-90%% edge width from analysis crops"
     )
-    subcommands.add_parser(
+    _ = subcommands.add_parser(
         "render", help="create analysis renders and final progression"
     )
-    subcommands.add_parser(
+    _ = subcommands.add_parser(
         "all", help="extract, inventory, analyze, edge-spread, and render"
     )
     return root
 
 
-def run(arguments: argparse.Namespace) -> None:
+def parse_arguments(argv: Sequence[str] | None) -> CliArguments:
+    arguments = CliArguments()
+    _ = parser().parse_args(argv, namespace=arguments)
+    if arguments.command is None:
+        raise RuntimeError("No command selected")
+    return arguments
+
+
+def run(arguments: CliArguments) -> None:
     paths = project_paths(arguments)
     if arguments.command in {"extract", "all"}:
         extracted = extract_raw_archives(paths.archives, paths.raw)
@@ -98,7 +133,7 @@ def run(arguments: argparse.Namespace) -> None:
             paths.data / "metrics.jsonl",
             paths.crops,
             decoder,
-            getattr(arguments, "crop_size", 1400),
+            arguments.crop_size,
         )
         print_rankings(rows)
         if arguments.command == "analyze":
@@ -127,7 +162,7 @@ def run(arguments: argparse.Namespace) -> None:
 
 def main(argv: Sequence[str] | None = None) -> None:
     try:
-        run(parser().parse_args(argv))
+        run(parse_arguments(argv))
     except (FileNotFoundError, FileExistsError, RuntimeError) as error:
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(1) from None

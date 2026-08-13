@@ -1,11 +1,9 @@
-import datetime
 from pathlib import Path
 
 import numpy as np
 import rawpy
-from numpy.typing import NDArray
 
-Rgb16 = NDArray[np.uint16]
+Rgb16 = np.ndarray[tuple[int, int, int], np.dtype[np.uint16]]
 
 
 class RawDecoder:
@@ -13,11 +11,7 @@ class RawDecoder:
         with rawpy.imread(str(path)) as raw:
             metadata = raw.other
             sizes = raw.sizes
-            timestamp = metadata.timestamp
-            if isinstance(timestamp, datetime.datetime):
-                timestamp_text = timestamp.astimezone().isoformat()
-            else:
-                timestamp_text = ""
+            timestamp_text = metadata.timestamp.astimezone().isoformat()
             return {
                 "file": path.name,
                 "bytes": path.stat().st_size,
@@ -34,11 +28,7 @@ class RawDecoder:
             }
 
     def decode(self, path: Path, highlight: int = 0) -> Rgb16:
-        highlight_mode = (
-            rawpy.HighlightMode.Clip
-            if highlight <= 0
-            else rawpy.HighlightMode.ReconstructDefault
-        )
+        highlight_mode = 0 if highlight <= 0 else 5
         with rawpy.imread(str(path)) as raw:
             rgb = raw.postprocess(
                 output_bps=16,
@@ -46,7 +36,7 @@ class RawDecoder:
                 bright=1.0,
                 highlight_mode=highlight_mode,
                 gamma=(1.0, 1.0),
-                output_color=rawpy.ColorSpace.sRGB,
+                output_color=1,
             )
         rgb16 = np.asarray(rgb, dtype=np.uint16)
         if rgb16.ndim != 3 or rgb16.shape[2] != 3:

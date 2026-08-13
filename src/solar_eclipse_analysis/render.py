@@ -6,7 +6,6 @@ from pathlib import Path
 import cv2
 import matplotlib
 import numpy as np
-from matplotlib import font_manager
 from PIL import Image, ImageDraw, ImageFont
 
 from solar_eclipse_analysis.analyze import crop_around
@@ -14,6 +13,12 @@ from solar_eclipse_analysis.raw import RawDecoder, Rgb16
 
 matplotlib.use("Agg")
 from matplotlib import colormaps
+
+FloatVector = np.ndarray[tuple[int], np.dtype[np.float32]]
+FloatImage = np.ndarray[tuple[int, int], np.dtype[np.float32]]
+FloatRgb = np.ndarray[tuple[int, int, int], np.dtype[np.float32]]
+Rgb8 = np.ndarray[tuple[int, int, int], np.dtype[np.uint8]]
+Rgba64 = np.ndarray[tuple[int, int, int], np.dtype[np.float64]]
 
 
 def load_metrics(path: Path) -> dict[str, dict[str, str]]:
@@ -50,41 +55,59 @@ def tonemap(
     strength: float = 6.0,
     black: float = 0.0,
     saturation: float = 1.0,
-) -> np.ndarray:
-    image = rgb.astype(np.float32) / 65535.0
-    luminance = (
-        0.2126 * image[:, :, 0] + 0.7152 * image[:, :, 1] + 0.0722 * image[:, :, 2]
+) -> Rgb8:
+    image: FloatRgb = np.asarray(rgb.astype(np.float32) / 65535.0, dtype=np.float32)
+    luminance: FloatImage = np.asarray(
+        0.2126 * image[:, :, 0] + 0.7152 * image[:, :, 1] + 0.0722 * image[:, :, 2],
+        dtype=np.float32,
     )
-    white = max(float(np.percentile(luminance, white_percentile)), 1e-6)
-    mapped = np.clip(
-        np.log1p(strength * np.maximum(luminance / white - black, 0))
-        / np.log1p(strength),
-        0,
-        1,
+    white = max(np.percentile(luminance, white_percentile).item(), 1e-6)
+    logarithm_input: FloatImage = np.asarray(
+        strength * np.maximum(luminance / white - black, 0) + 1,
+        dtype=np.float32,
     )
-    output = np.clip(image * (mapped / (luminance + 1e-6))[:, :, None], 0, 1)
+    mapped: FloatImage = np.asarray(
+        np.clip(
+            cv2.log(logarithm_input) / math.log1p(strength),
+            0,
+            1,
+        ),
+        dtype=np.float32,
+    )
+    output: FloatImage = np.asarray(
+        np.clip(image * (mapped / (luminance + 1e-6))[:, :, None], 0, 1),
+        dtype=np.float32,
+    )
     if saturation != 1:
         output_luminance = (
             0.2126 * output[:, :, 0]
             + 0.7152 * output[:, :, 1]
             + 0.0722 * output[:, :, 2]
         )
-        output = np.clip(
-            output_luminance[:, :, None]
-            + (output - output_luminance[:, :, None]) * saturation,
-            0,
-            1,
+        output = np.asarray(
+            np.clip(
+                output_luminance[:, :, None]
+                + (output - output_luminance[:, :, None]) * saturation,
+                0,
+                1,
+            ),
+            dtype=np.float32,
         )
-    return np.clip(np.power(output, 1 / gamma) * 255 + 0.5, 0, 255).astype(np.uint8)
+    gamma_output: FloatRgb = np.asarray(output ** (1 / gamma), dtype=np.float32)
+    return np.asarray(np.clip(gamma_output * 255 + 0.5, 0, 255), dtype=np.uint8)
 
 
-def unsharp(image: np.ndarray, sigma: float, amount: float) -> np.ndarray:
+def unsharp(image: Rgb8, sigma: float, amount: float) -> Rgb8:
     blurred = cv2.GaussianBlur(image, (0, 0), sigma)
-    return np.clip(
-        image.astype(np.float32) * (1 + amount) - blurred.astype(np.float32) * amount,
-        0,
-        255,
-    ).astype(np.uint8)
+    return np.asarray(
+        np.clip(
+            image.astype(np.float32) * (1 + amount)
+            - blurred.astype(np.float32) * amount,
+            0,
+            255,
+        ),
+        dtype=np.uint8,
+    )
 
 
 def render_long_exposure(
@@ -92,28 +115,38 @@ def render_long_exposure(
 ) -> list[Path]:
     rgb = decoder.decode(require_raw(raw_dir, "_J3A8490.CR3"), highlight=5)
     rgb = np.rot90(rgb, k=3)
+    _, width, _ = rgb.shape
     scale = 2200 / rgb.shape[0]
     rgb = np.asarray(
-        cv2.resize(
-            rgb, (round(rgb.shape[1] * scale), 2200), interpolation=cv2.INTER_AREA
-        ),
+        cv2.resize(rgb, (round(width * scale), 2200), interpolation=cv2.INTER_AREA),
         dtype=np.uint16,
     )
     gold = tonemap(rgb, 99.75, 2.25, 12, 0.002, 1.15)
-    luminance = cv2.cvtColor(gold, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255
-    mask = np.clip((luminance - 0.015) / 0.12, 0, 1)[:, :, None]
+    display_luminance: FloatImage = np.asarray(
+        cv2.cvtColor(gold, cv2.COLOR_RGB2GRAY).astype(np.float32) / np.float32(255),
+        dtype=np.float32,
+    )
+    mask = np.clip((display_luminance - 0.015) / 0.12, 0, 1)[:, :, None]
     gold = np.clip(gold.astype(np.float32) * (0.82 + 0.18 * mask), 0, 255).astype(
         np.uint8
     )
     gold_path = renders_dir / "8490_long_exposure_gold.png"
     Image.fromarray(gold).save(gold_path, compress_level=3)
-    linear = rgb.astype(np.float32) / 65535
-    luminance = (
-        0.2126 * linear[:, :, 0] + 0.7152 * linear[:, :, 1] + 0.0722 * linear[:, :, 2]
+    linear: FloatRgb = np.asarray(rgb.astype(np.float32) / 65535, dtype=np.float32)
+    linear_luminance: FloatImage = np.asarray(
+        0.2126 * linear[:, :, 0] + 0.7152 * linear[:, :, 1] + 0.0722 * linear[:, :, 2],
+        dtype=np.float32,
     )
-    white = max(float(np.percentile(luminance, 99.8)), 1e-6)
-    mapped = np.clip(np.log1p(40 * luminance / white) / np.log1p(40), 0, 1)
-    false_color = (colormaps["magma"](mapped)[:, :, :3] * 255).astype(np.uint8)
+    white = max(np.percentile(linear_luminance, 99.8).item(), 1e-6)
+    logarithm_input: FloatImage = np.asarray(
+        40 * linear_luminance / white + 1, dtype=np.float32
+    )
+    mapped: FloatImage = np.asarray(
+        np.clip(cv2.log(logarithm_input) / math.log1p(40), 0, 1),
+        dtype=np.float32,
+    )
+    colored: Rgba64 = np.asarray(colormaps["magma"](mapped), dtype=np.float64)
+    false_color: Rgb8 = np.asarray(colored[:, :, :3] * 255, dtype=np.uint8)
     false_color_path = renders_dir / "8490_linear_falsecolor_magma.png"
     Image.fromarray(false_color).save(false_color_path, compress_level=3)
     return [gold_path, false_color_path]
@@ -132,7 +165,7 @@ def render_stack(
         rgb = decoder.decode(require_raw(raw_dir, name), highlight=3)
         crops.append(metric_crop(rgb, metrics, name, 1400))
         del rgb
-        gc.collect()
+        _ = gc.collect()
     reference = crops[-1].astype(np.float32) / 65535
     reference_luminance = np.log1p(
         50
@@ -183,7 +216,7 @@ def render_stack(
     Image.fromarray(output).save(output_path, compress_level=3)
     with alignment_path.open("w", encoding="utf-8") as stream:
         for name, (correlation, warp) in zip(names, transforms, strict=True):
-            stream.write(f"{name} ECC={correlation} warp={warp.tolist()}\n")
+            _ = stream.write(f"{name} ECC={correlation} warp={warp.tolist()}\n")
     return output_path
 
 
@@ -217,14 +250,23 @@ def render_details(
     Image.fromarray(detail).save(detail_path, compress_level=3)
     created.append(detail_path)
     gray = cv2.cvtColor(detail, cv2.COLOR_RGB2GRAY).astype(np.float32) / 255
-    gradient = cv2.magnitude(
-        cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3),
-        cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3),
+    gradient_x: FloatImage = np.asarray(
+        cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3), dtype=np.float32
     )
-    scale = max(float(np.percentile(gradient, 99.9)), 1e-6)
-    edges = (
-        colormaps["inferno"](np.clip(gradient / scale, 0, 1))[:, :, :3] * 255
-    ).astype(np.uint8)
+    gradient_y: FloatImage = np.asarray(
+        cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3), dtype=np.float32
+    )
+    gradient: FloatImage = np.asarray(
+        cv2.magnitude(gradient_x, gradient_y), dtype=np.float32
+    )
+    scale = max(np.percentile(gradient, 99.9).item(), 1e-6)
+    normalized_gradient: FloatImage = np.asarray(
+        np.clip(gradient / scale, 0, 1), dtype=np.float32
+    )
+    colored_edges: Rgba64 = np.asarray(
+        colormaps["inferno"](normalized_gradient), dtype=np.float64
+    )
+    edges: Rgb8 = np.asarray(colored_edges[:, :, :3] * 255, dtype=np.uint8)
     edges_path = renders_dir / "8513_edge_structure_falsecolor.png"
     Image.fromarray(edges).save(edges_path, compress_level=3)
     created.append(edges_path)
@@ -244,16 +286,29 @@ def progression_tile(rgb: Rgb16, metrics: dict[str, str]) -> Image.Image:
 
 
 def feathered_rgba(image: Image.Image) -> Image.Image:
-    rgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
+    rgb: FloatRgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
     size = rgb.shape[0]
-    y_grid, x_grid = np.mgrid[0:size, 0:size]
+    coordinates: FloatVector = np.arange(size, dtype=np.float32)
+    raw_x_grid, raw_y_grid = np.meshgrid(coordinates, coordinates)
+    x_grid: FloatImage = np.asarray(raw_x_grid, dtype=np.float32)
+    y_grid: FloatImage = np.asarray(raw_y_grid, dtype=np.float32)
     center = (size - 1) / 2
-    radius = np.sqrt((x_grid - center) ** 2 + (y_grid - center) ** 2) / (size / 2)
-    radial = np.clip((1.02 - radius) / (1.02 - 0.70), 0, 1)
+    squared_distance: FloatImage = np.asarray(
+        (x_grid - center) ** 2 + (y_grid - center) ** 2, dtype=np.float32
+    )
+    radius: FloatImage = np.asarray(
+        cv2.sqrt(squared_distance) / (size / 2), dtype=np.float32
+    )
+    radial: FloatImage = np.asarray(
+        np.clip((1.02 - radius) / (1.02 - 0.70), 0, 1), dtype=np.float32
+    )
     radial = radial * radial * (3 - 2 * radial)
     luminance = 0.2126 * rgb[:, :, 0] + 0.7152 * rgb[:, :, 1] + 0.0722 * rgb[:, :, 2]
-    content = np.sqrt(np.clip((luminance - 0.008) / 0.12, 0, 1))
-    alpha = radial * np.maximum(content, 0.16)
+    clipped_content: FloatImage = np.asarray(
+        np.clip((luminance - 0.008) / 0.12, 0, 1), dtype=np.float32
+    )
+    content: FloatImage = np.asarray(cv2.sqrt(clipped_content), dtype=np.float32)
+    alpha: FloatImage = np.asarray(radial * np.maximum(content, 0.16), dtype=np.float32)
     rgba = np.dstack([rgb, alpha])
     return Image.fromarray(np.clip(rgba * 255 + 0.5, 0, 255).astype(np.uint8), "RGBA")
 
@@ -264,10 +319,8 @@ def format_shutter(value: str) -> str:
 
 
 def dejavu_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    weight = "bold" if bold else "normal"
-    path = font_manager.findfont(
-        font_manager.FontProperties(family="DejaVu Sans", weight=weight)
-    )
+    filename = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    path = Path(matplotlib.get_data_path()) / "fonts" / "ttf" / filename
     return ImageFont.truetype(path, size)
 
 
@@ -290,10 +343,14 @@ def render_progression(
     id_font = dejavu_font(20, bold=True)
     settings_font = dejavu_font(16)
     draw.text((86, 70), "PARTIAL SOLAR ECLIPSE", font=title_font, fill=(242, 242, 244))
+    metadata_text = (
+        "12 AUG 2026  \u00b7  Amsterdam, Netherlands  \u00b7  Canon EOS R7  \u00b7  "
+        "RF-S 18\u2013150mm F3.5\u20136.3 IS STM @ 150 mm  \u00b7  ISO 160  \u00b7  "
+        "21 CR3 frames"
+    )
     draw.text(
         (88, 139),
-        "12 AUG 2026  \u00b7  Amsterdam, Netherlands  \u00b7  Canon EOS R7  \u00b7  "
-        "RF-S 18\u2013150mm F3.5\u20136.3 IS STM @ 150 mm  \u00b7  ISO 160  \u00b7  21 CR3 frames",
+        metadata_text,
         font=metadata_font,
         fill=(154, 154, 162),
     )

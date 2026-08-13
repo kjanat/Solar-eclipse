@@ -1,9 +1,13 @@
+from pathlib import Path
+
 import pytest
 
 from solar_eclipse_analysis.cli import main
 
 
-def test_expected_error_has_no_traceback(tmp_path, capsys) -> None:
+def test_expected_error_has_no_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     with pytest.raises(SystemExit) as exit_info:
         main(["--root", str(tmp_path), "analyze"])
 
@@ -14,7 +18,9 @@ def test_expected_error_has_no_traceback(tmp_path, capsys) -> None:
     assert "Traceback" not in captured.err
 
 
-def test_edge_spread_does_not_require_raw_decoder(tmp_path, capsys) -> None:
+def test_edge_spread_does_not_require_raw_decoder(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     with pytest.raises(SystemExit) as exit_info:
         main(["--root", str(tmp_path), "edge-spread"])
 

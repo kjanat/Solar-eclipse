@@ -26,8 +26,10 @@ def print_inventory(rows: list[dict[str, str | int | float]]) -> None:
         shutter_label = (
             f"1/{round(1 / shutter)}" if 0 < shutter < 1 else f"{shutter:.4g}s"
         )
-        print(
+        summary = (
             f"{row['file']:12} {float(row['bytes']) / 1024 / 1024:6.2f} MiB  "
             f"ISO {float(row['iso']):5.0f}  {shutter_label:8}  "
-            f"f/{float(row['aperture']):g}  {float(row['focal_mm']):g}mm  {row['timestamp']}"
+            f"f/{float(row['aperture']):g}  "
+            f"{float(row['focal_mm']):g}mm  {row['timestamp']}"
         )
+        print(summary)
